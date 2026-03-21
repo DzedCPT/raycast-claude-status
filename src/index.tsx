@@ -18,6 +18,7 @@ interface ClaudeInstance {
   lines_removed?: number;
   context_percent?: number;
   pid?: number; // Claude node process PID, used for stale session detection
+  permission_mode?: string; // "default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions"
   updated_at?: string;
 }
 
@@ -33,6 +34,21 @@ function statusIcon(status?: string): { source: Icon; tintColor: Color } {
       return { source: Icon.CircleFilled, tintColor: Color.SecondaryText };
     default:
       return { source: Icon.QuestionMarkCircle, tintColor: Color.SecondaryText };
+  }
+}
+
+// Permission mode dot: grey = default, purple = accept edits, turquoise = plan, red = dangerous
+function modeIcon(mode?: string): { source: Icon; tintColor: Color } {
+  switch (mode) {
+    case "acceptEdits":
+      return { source: Icon.CircleFilled, tintColor: Color.Purple };
+    case "plan":
+      return { source: Icon.CircleFilled, tintColor: { light: "#0d9488", dark: "#2dd4bf" } };
+    case "dontAsk":
+    case "bypassPermissions":
+      return { source: Icon.CircleFilled, tintColor: Color.Red };
+    default:
+      return { source: Icon.CircleFilled, tintColor: Color.SecondaryText };
   }
 }
 
@@ -129,6 +145,7 @@ export default function Command() {
                 },
                 { text: `${contextPct}%`, tooltip: "Context usage" },
                 { text: instance.status ?? "unknown" },
+                { icon: modeIcon(instance.permission_mode) },
                 { text: timeAgo(instance.updated_at), tooltip: instance.updated_at },
               ]}
               actions={
