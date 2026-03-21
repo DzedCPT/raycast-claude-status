@@ -3,19 +3,25 @@ import { execSync } from "child_process";
 import { readdirSync, readFileSync, unlinkSync } from "fs";
 import { join } from "path";
 
+// State files are written by two scripts in ~/.claude/:
+//   - statusline.sh: writes cwd, model, lines, context_percent, pid, updated_at
+//   - hooks/raycast-status.sh: writes status, permission_mode, auto_name, custom_name
+// Each session gets its own JSON file: /tmp/claude-instances/<session_id>.json
 const STATE_DIR = "/tmp/claude-instances";
 
 interface ClaudeInstance {
   session_id: string;
-  status?: string;
+  status?: string; // "idle" | "working" | "waiting"
   cwd?: string;
   model?: string;
   lines_added?: number;
   lines_removed?: number;
   context_percent?: number;
-  pid?: number;
+  pid?: number; // Claude node process PID, used for stale session detection
   updated_at?: string;
 }
+
+// Status dot: green = actively working, orange = waiting for user input, grey = idle
 
 function statusIcon(status?: string): { source: Icon; tintColor: Color } {
   switch (status) {
