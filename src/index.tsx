@@ -19,6 +19,8 @@ interface ClaudeInstance {
   context_percent?: number;
   pid?: number; // Claude node process PID, used for stale session detection
   permission_mode?: string; // "default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions"
+  auto_name?: string; // Latest user prompt (truncated), updated on each prompt
+  custom_name?: string; // User-set name via "name: ..." prompt, takes priority over auto_name
   updated_at?: string;
 }
 
@@ -126,7 +128,8 @@ export default function Command() {
           return (
             <List.Item
               key={instance.session_id}
-              title={projectName(instance.cwd)}
+              // Name priority: user-set custom name > latest prompt > directory name
+              title={instance.custom_name ?? instance.auto_name ?? projectName(instance.cwd)}
               subtitle={instance.cwd?.split("/").slice(-2).join("/")}
               icon={statusIcon(instance.status)}
               accessories={[
