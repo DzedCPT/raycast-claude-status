@@ -105,16 +105,22 @@ export default function Command() {
             <List.Item
               key={instance.session_id}
               title={projectName(instance.cwd)}
-              subtitle={instance.cwd}
+              subtitle={instance.cwd?.split("/").slice(-2).join("/")}
               icon={statusIcon(instance.status)}
               accessories={[
                 ...(instance.model ? [{ tag: instance.model }] : []),
-                ...(hasLines
-                  ? [
-                      { text: { value: `+${added}`, color: Color.Green } },
-                      { text: { value: `-${removed}`, color: Color.Red } },
-                    ]
-                  : []),
+                {
+                  text: {
+                    value: `+${added}`,
+                    color: hasLines ? Color.Green : Color.SecondaryText,
+                  },
+                },
+                {
+                  text: {
+                    value: `-${removed}`,
+                    color: hasLines ? Color.Red : Color.SecondaryText,
+                  },
+                },
                 { text: `${contextPct}%`, tooltip: "Context usage" },
                 { text: instance.status ?? "unknown" },
                 { text: timeAgo(instance.updated_at), tooltip: instance.updated_at },
