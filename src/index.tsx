@@ -1,6 +1,13 @@
-import { ActionPanel, Action, List, Color, Icon, closeMainWindow } from "@raycast/api";
+import {
+  ActionPanel,
+  Action,
+  List,
+  Color,
+  Icon,
+  closeMainWindow,
+} from "@raycast/api";
 import { execSync } from "child_process";
-import { readdirSync, readFileSync, unlinkSync } from "fs";
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 
 // State files are written by two scripts in ~/.claude/:
@@ -21,6 +28,9 @@ interface ClaudeInstance {
   permission_mode?: string; // "default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions"
   auto_name?: string; // Latest user prompt (truncated), updated on each prompt
   custom_name?: string; // User-set name via "name: ..." prompt, takes priority over auto_name
+  terminal?: string; // TERM_PROGRAM value: "WezTerm", "zed", etc.
+  wezterm_pane?: number; // WEZTERM_PANE id, used to activate the correct pane
+  wezterm_tab_title?: string; // Populated at load time from `wezterm cli list`
   updated_at?: string;
 }
 
@@ -35,7 +45,10 @@ function statusIcon(status?: string): { source: Icon; tintColor: Color } {
     case "idle":
       return { source: Icon.CircleFilled, tintColor: Color.SecondaryText };
     default:
-      return { source: Icon.QuestionMarkCircle, tintColor: Color.SecondaryText };
+      return {
+        source: Icon.QuestionMarkCircle,
+        tintColor: Color.SecondaryText,
+      };
   }
 }
 
@@ -45,12 +58,29 @@ function modeIcon(mode?: string): { source: Icon; tintColor: Color } {
     case "acceptEdits":
       return { source: Icon.CircleFilled, tintColor: Color.Purple };
     case "plan":
-      return { source: Icon.CircleFilled, tintColor: { light: "#0d9488", dark: "#2dd4bf" } };
+      return {
+        source: Icon.CircleFilled,
+        tintColor: { light: "#0d9488", dark: "#2dd4bf" },
+      };
     case "dontAsk":
     case "bypassPermissions":
       return { source: Icon.CircleFilled, tintColor: Color.Red };
     default:
       return { source: Icon.CircleFilled, tintColor: Color.SecondaryText };
+  }
+}
+
+function terminalTag(
+  terminal?: string,
+): { value: string; color: Color } | null {
+  if (!terminal) return null;
+  switch (terminal.toLowerCase()) {
+    case "wezterm":
+      return { value: "wez", color: Color.Blue };
+    case "zed":
+      return { value: "zed", color: Color.Yellow };
+    default:
+      return { value: terminal, color: Color.SecondaryText };
   }
 }
 
@@ -72,16 +102,36 @@ function isProcessAlive(pid?: number): boolean {
   }
 }
 
+function getWeztermPanes(): Map<number, { tab_title: string }> {
+  try {
+    const json = execSync(
+      `/opt/homebrew/bin/wezterm cli list --format json`,
+    ).toString();
+    const panes = JSON.parse(json) as { pane_id: number; tab_title: string }[];
+    const map = new Map<number, { tab_title: string }>();
+    for (const p of panes) {
+      map.set(p.pane_id, { tab_title: p.tab_title });
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
 function loadInstances(): ClaudeInstance[] {
   try {
     const files = readdirSync(STATE_DIR).filter((f) => f.endsWith(".json"));
-    return files
+    const instances = files
       .map((file) => {
         try {
           const content = readFileSync(join(STATE_DIR, file), "utf-8");
           const instance = JSON.parse(content) as ClaudeInstance;
           if (!isProcessAlive(instance.pid)) {
-            try { unlinkSync(join(STATE_DIR, file)); } catch { /* ignore */ }
+            try {
+              unlinkSync(join(STATE_DIR, file));
+            } catch {
+              /* ignore */
+            }
             return null;
           }
           return instance;
@@ -91,6 +141,35 @@ function loadInstances(): ClaudeInstance[] {
       })
       .filter((instance): instance is ClaudeInstance => instance !== null)
       .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
+
+    // Deduplicate by PID — keep only the most recent session per process.
+    // This handles the case where a new session reuses the same Claude process
+    // (same PID + pane) but the old state file was never cleaned up.
+    const seenPids = new Set<number>();
+    const deduped = instances.filter((instance) => {
+      if (!instance.pid) return true;
+      if (seenPids.has(instance.pid)) return false;
+      seenPids.add(instance.pid);
+      return true;
+    });
+
+    // Enrich WezTerm instances with tab titles
+    const hasWezterm = deduped.some(
+      (i) => i.terminal?.toLowerCase() === "wezterm" && i.wezterm_pane != null,
+    );
+    if (hasWezterm) {
+      const panes = getWeztermPanes();
+      for (const instance of deduped) {
+        if (instance.wezterm_pane != null) {
+          const pane = panes.get(instance.wezterm_pane);
+          if (pane?.tab_title) {
+            instance.wezterm_tab_title = pane.tab_title;
+          }
+        }
+      }
+    }
+
+    return deduped;
   } catch {
     return [];
   }
@@ -117,7 +196,10 @@ export default function Command() {
   return (
     <List>
       {instances.length === 0 ? (
-        <List.EmptyView title="No Claude instances running" description="Start a Claude Code session to see it here" />
+        <List.EmptyView
+          title="No Claude instances running"
+          description="Start a Claude Code session to see it here"
+        />
       ) : (
         instances.map((instance) => {
           const added = instance.lines_added ?? 0;
@@ -128,11 +210,19 @@ export default function Command() {
           return (
             <List.Item
               key={instance.session_id}
-              // Name priority: user-set custom name > latest prompt > directory name
-              title={instance.custom_name ?? instance.auto_name ?? projectName(instance.cwd)}
+              // Name priority: custom name > wezterm tab title > auto name > directory name
+              title={
+                instance.custom_name ||
+                instance.wezterm_tab_title ||
+                instance.auto_name ||
+                projectName(instance.cwd)
+              }
               subtitle={instance.cwd?.split("/").slice(-2).join("/")}
               icon={statusIcon(instance.status)}
               accessories={[
+                ...(terminalTag(instance.terminal)
+                  ? [{ tag: terminalTag(instance.terminal)! }]
+                  : []),
                 ...(instance.model ? [{ tag: instance.model }] : []),
                 {
                   text: {
@@ -149,17 +239,67 @@ export default function Command() {
                 { text: `${contextPct}%`, tooltip: "Context usage" },
                 { text: instance.status ?? "unknown" },
                 { icon: modeIcon(instance.permission_mode) },
-                { text: timeAgo(instance.updated_at), tooltip: instance.updated_at },
+                {
+                  text: timeAgo(instance.updated_at),
+                  tooltip: instance.updated_at,
+                },
               ]}
               actions={
                 <ActionPanel>
-                  <Action
-                    title="Open in Zed"
-                    icon={Icon.Code}
-                    onAction={() => { closeMainWindow(); execSync(`zed "${instance.cwd}"`); }}
+                  {instance.terminal?.toLowerCase() === "wezterm" &&
+                  instance.wezterm_pane != null ? (
+                    <Action
+                      title="Focus WezTerm Pane"
+                      icon={Icon.Terminal}
+                      onAction={() => {
+                        closeMainWindow();
+                        // Look up which WezTerm workspace this pane belongs to.
+                        // We query live (rather than storing at write time) so the
+                        // workspace is always current even if panes get moved.
+                        const listJson = execSync(
+                          `/opt/homebrew/bin/wezterm cli list --format json`,
+                        ).toString();
+                        const panes = JSON.parse(listJson) as {
+                          pane_id: number;
+                          workspace: string;
+                        }[];
+                        const target = panes.find(
+                          (p) => p.pane_id === instance.wezterm_pane,
+                        );
+                        if (target) {
+                          // Write a focus request for WezTerm's update-status handler.
+                          // WezTerm's Lua API can't be called from outside, and `wezterm cli`
+                          // has no workspace-switch command, so we use this file as a handshake.
+                          // The update-status handler in wezterm.lua reads it, switches workspace,
+                          // and focuses the target pane. See wezterm.lua for the full flow.
+                          writeFileSync(
+                            "/tmp/wezterm-focus-request",
+                            `${target.workspace}\t${instance.wezterm_pane}`,
+                          );
+                        }
+                        // Bringing WezTerm to front triggers update-status, which picks
+                        // up the focus request file written above.
+                        execSync(`open -a WezTerm`);
+                      }}
+                    />
+                  ) : (
+                    <Action
+                      title="Open in Zed"
+                      icon={Icon.Code}
+                      onAction={() => {
+                        closeMainWindow();
+                        execSync(`zed "${instance.cwd}"`);
+                      }}
+                    />
+                  )}
+                  <Action.CopyToClipboard
+                    title="Copy Working Directory"
+                    content={instance.cwd ?? ""}
                   />
-                  <Action.CopyToClipboard title="Copy Working Directory" content={instance.cwd ?? ""} />
-                  <Action.CopyToClipboard title="Copy Session ID" content={instance.session_id} />
+                  <Action.CopyToClipboard
+                    title="Copy Session ID"
+                    content={instance.session_id}
+                  />
                 </ActionPanel>
               }
             />
