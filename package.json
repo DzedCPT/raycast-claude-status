@@ -9,8 +9,8 @@
   "commands": [
     {
       "name": "index",
-      "title": "Pick from List",
-      "description": "Pick an item from a list",
+      "title": "Agent Status",
+      "description": "List and manage active Claude Code sessions",
       "mode": "view"
     }
   ],
