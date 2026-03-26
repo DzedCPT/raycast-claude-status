@@ -253,9 +253,12 @@ export default function Command() {
                       icon={Icon.Terminal}
                       onAction={() => {
                         closeMainWindow();
-                        // Look up which WezTerm workspace this pane belongs to.
-                        // We query live (rather than storing at write time) so the
-                        // workspace is always current even if panes get moved.
+                        // Activate the pane directly via CLI, then look up its
+                        // workspace so we can switch to it via the file handshake
+                        // (wezterm cli has no workspace-switch command).
+                        execSync(
+                          `/opt/homebrew/bin/wezterm cli activate-pane --pane-id ${instance.wezterm_pane}`,
+                        );
                         const listJson = execSync(
                           `/opt/homebrew/bin/wezterm cli list --format json`,
                         ).toString();
@@ -267,18 +270,11 @@ export default function Command() {
                           (p) => p.pane_id === instance.wezterm_pane,
                         );
                         if (target) {
-                          // Write a focus request for WezTerm's update-status handler.
-                          // WezTerm's Lua API can't be called from outside, and `wezterm cli`
-                          // has no workspace-switch command, so we use this file as a handshake.
-                          // The update-status handler in wezterm.lua reads it, switches workspace,
-                          // and focuses the target pane. See wezterm.lua for the full flow.
                           writeFileSync(
                             "/tmp/wezterm-focus-request",
                             `${target.workspace}\t${instance.wezterm_pane}`,
                           );
                         }
-                        // Bringing WezTerm to front triggers update-status, which picks
-                        // up the focus request file written above.
                         execSync(`open -a WezTerm`);
                       }}
                     />
