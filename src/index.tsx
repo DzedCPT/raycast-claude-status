@@ -260,9 +260,6 @@ export default function Command() {
               subtitle={instance.cwd?.split("/").slice(-2).join("/")}
               icon={statusIcon(instance.status)}
               accessories={[
-                ...(terminalTag(instance.terminal)
-                  ? [{ tag: terminalTag(instance.terminal)! }]
-                  : []),
                 ...(instance.model ? [{ tag: instance.model }] : []),
                 {
                   text: {
