@@ -62,7 +62,7 @@ update_status() {
 
 case "$HOOK_EVENT" in
     "SessionStart")
-        update_status "idle"
+        update_status "stopped"
         ;;
     "UserPromptSubmit")
         USER_PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty')
@@ -85,31 +85,25 @@ case "$HOOK_EVENT" in
         fi
         ;;
     "PreToolUse")
-        if [[ "$TOOL_NAME" == "AskUserQuestion" ]]; then
-            update_status "waiting"
-        else
-            update_status "working"
-        fi
+        update_status "working"
         ;;
     "PostToolUse")
-        # No status change needed — PreToolUse already sets the correct state
+        # No status change needed
         ;;
     "Stop"|"SubagentStop")
-        update_status "idle"
+        update_status "stopped"
         ;;
     "Notification")
-        if [[ "$NOTIFICATION_TYPE" == "idle_prompt" ]]; then
-            update_status "idle"
-        elif [[ "$NOTIFICATION_TYPE" == "permission_prompt" ]]; then
-            update_status "waiting"
+        if [[ "$NOTIFICATION_TYPE" == "permission_prompt" ]]; then
+            update_status "permission"
         fi
         ;;
     "SessionEnd")
-        rm -f "$STATE_FILE"
+        rm -f "$STATE_FILE" "${STATE_DIR}/${SESSION_ID}.metrics.json"
         ;;
 esac
 
 # Clean up stale sessions (older than 24 hours)
-find "$STATE_DIR" -name "*.json" -type f -mmin +1440 -delete 2>/dev/null || true
+find "$STATE_DIR" -name "*.json" -o -name "*.metrics.json" -type f -mmin +1440 -delete 2>/dev/null || true
 
 exit 0

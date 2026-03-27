@@ -11,7 +11,8 @@
       "name": "index",
       "title": "Agent Status",
       "description": "List and manage active Claude Code sessions",
-      "mode": "view"
+      "mode": "view",
+      "icon": "command-icon.png"
     }
   ],
   "dependencies": {

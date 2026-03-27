@@ -25,7 +25,7 @@ function sendWeztermRequest(ops: Record<string, unknown>[]) {
 
 interface ClaudeInstance {
   session_id: string;
-  status?: string; // "idle" | "working" | "waiting"
+  status?: string; // "working" | "stopped" | "permission"
   cwd?: string;
   model?: string;
   lines_added?: number;
@@ -41,15 +41,14 @@ interface ClaudeInstance {
   updated_at?: string;
 }
 
-// Status dot: green = actively working, orange = waiting for user input, grey = idle
-
+// Status dot: green = working, orange = needs permission, grey = stopped
 function statusIcon(status?: string): { source: Icon; tintColor: Color } {
   switch (status) {
     case "working":
       return { source: Icon.CircleFilled, tintColor: Color.Green };
-    case "waiting":
+    case "permission":
       return { source: Icon.CircleFilled, tintColor: Color.Orange };
-    case "idle":
+    case "stopped":
       return { source: Icon.CircleFilled, tintColor: Color.SecondaryText };
     default:
       return {
@@ -111,9 +110,7 @@ function isProcessAlive(pid?: number): boolean {
 
 function getWeztermPanes(): Map<number, { tab_title: string }> {
   try {
-    const json = execSync(
-      `${WEZTERM} cli list --format json`,
-    ).toString();
+    const json = execSync(`${WEZTERM} cli list --format json`).toString();
     const panes = JSON.parse(json) as { pane_id: number; tab_title: string }[];
     const map = new Map<number, { tab_title: string }>();
     for (const p of panes) {
@@ -127,21 +124,57 @@ function getWeztermPanes(): Map<number, { tab_title: string }> {
 
 function loadInstances(): ClaudeInstance[] {
   try {
-    const files = readdirSync(STATE_DIR).filter((f) => f.endsWith(".json"));
+    // State is split across two files per session to avoid a race condition:
+    //   <id>.json         — written by the hook script (owns status, permission_mode, names)
+    //   <id>.metrics.json — written by the statusline script (owns cwd, model, lines, context%, pid)
+    //
+    // Both scripts run concurrently. If they shared a single file, the statusline's
+    // frequent read-modify-write cycle could overwrite a status change the hook just made.
+    // With separate files, each script writes its own file atomically (jq … > tmp && mv),
+    // and we merge them here at read time where it's single-threaded and safe.
+    const files = readdirSync(STATE_DIR).filter(
+      (f) => f.endsWith(".json") && !f.endsWith(".metrics.json"),
+    );
     const instances = files
       .map((file) => {
         try {
           const content = readFileSync(join(STATE_DIR, file), "utf-8");
-          const instance = JSON.parse(content) as ClaudeInstance;
-          if (!isProcessAlive(instance.pid)) {
+          if (!content.trim()) return null;
+          const hook = JSON.parse(content) as ClaudeInstance;
+
+          // Merge metrics file if it exists
+          const metricsFile = file.replace(".json", ".metrics.json");
+          try {
+            const metricsContent = readFileSync(
+              join(STATE_DIR, metricsFile),
+              "utf-8",
+            );
+            if (metricsContent.trim()) {
+              const metrics = JSON.parse(
+                metricsContent,
+              ) as Partial<ClaudeInstance>;
+              Object.assign(hook, metrics, {
+                // Hook-owned fields always win
+                status: hook.status,
+                permission_mode: hook.permission_mode,
+                auto_name: hook.auto_name,
+                custom_name: hook.custom_name,
+              });
+            }
+          } catch {
+            /* no metrics yet */
+          }
+
+          if (!isProcessAlive(hook.pid)) {
             try {
               unlinkSync(join(STATE_DIR, file));
+              unlinkSync(join(STATE_DIR, metricsFile));
             } catch {
               /* ignore */
             }
             return null;
           }
-          return instance;
+          return hook;
         } catch {
           return null;
         }

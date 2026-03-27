@@ -52,25 +52,22 @@ else
     echo "🧠 $MODEL_DISPLAY | 📁 ${CURRENT_DIR##*/}$GIT_BRANCH$LINES_INFO | Context: 0%"
 fi
 
-# Write state for Raycast extension.
-# Includes $PPID (the Claude node process) so the Raycast extension can detect
-# stale sessions by checking if the process is still alive. This handles the case
-# where a terminal is closed and the SessionEnd hook never fires.
+# Write metrics to a separate .metrics.json file, not the hook's .json file.
+# Both scripts run concurrently. If they shared one file, this script's frequent
+# read-modify-write would race with the hook's status updates — e.g. we read
+# status="stopped", the hook sets status="working", then we write back "stopped".
+# Separate files let each script write atomically; the Raycast extension merges
+# them at read time where it's single-threaded and safe.
 SESSION_ID=$(echo "$input" | jq -r '.session_id // empty')
 if [ -n "$SESSION_ID" ]; then
     STATE_DIR="/tmp/claude-instances"
     mkdir -p "$STATE_DIR"
-    STATE_FILE="${STATE_DIR}/${SESSION_ID}.json"
+    METRICS_FILE="${STATE_DIR}/${SESSION_ID}.metrics.json"
 
     # Detect terminal env vars
     TERM_VAL="${TERM_PROGRAM:-}"
     WEZTERM_VAL="${WEZTERM_PANE:-}"
 
-    # Build jq expression that merges only statusline-owned fields into the
-    # existing file, preserving hook-owned fields (status, permission_mode,
-    # auto_name, custom_name) as-is. This avoids the race condition where
-    # reading the file early and rewriting it later would overwrite a status
-    # change made by raycast-status.sh in between.
     JQ_ARGS=(
         --arg session_id "$SESSION_ID"
         --arg cwd "$CURRENT_DIR"
@@ -81,24 +78,16 @@ if [ -n "$SESSION_ID" ]; then
         --argjson pid "$PPID"
         --arg updated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     )
-    JQ_EXPR='.session_id = $session_id | .cwd = $cwd | .model = $model | .lines_added = $lines_added | .lines_removed = $lines_removed | .context_percent = $context_percent | .pid = $pid | .updated_at = $updated_at'
+    JQ_EXPR='{session_id: $session_id, cwd: $cwd, model: $model, lines_added: $lines_added, lines_removed: $lines_removed, context_percent: $context_percent, pid: $pid, updated_at: $updated_at}'
 
-    # Set terminal/pane from env vars if available
     if [[ -n "$TERM_VAL" ]]; then
         JQ_ARGS+=(--arg terminal "$TERM_VAL")
-        JQ_EXPR="$JQ_EXPR | .terminal = \$terminal"
+        JQ_EXPR="${JQ_EXPR%\}}, terminal: \$terminal}"
     fi
     if [[ -n "$WEZTERM_VAL" ]]; then
         JQ_ARGS+=(--argjson wezterm_pane "$WEZTERM_VAL")
-        JQ_EXPR="$JQ_EXPR | .wezterm_pane = \$wezterm_pane"
+        JQ_EXPR="${JQ_EXPR%\}}, wezterm_pane: \$wezterm_pane}"
     fi
 
-    if [[ -f "$STATE_FILE" ]]; then
-        # Merge into existing file — hook-owned fields are untouched
-        jq "${JQ_ARGS[@]}" "$JQ_EXPR" "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
-    else
-        # No file yet — create with defaults for hook-owned fields
-        JQ_ARGS+=(--arg status "idle" --arg permission_mode "default")
-        jq -n "${JQ_ARGS[@]}" "{$JQ_EXPR, status: \$status, permission_mode: \$permission_mode}" > "$STATE_FILE"
-    fi
+    jq -n "${JQ_ARGS[@]}" "$JQ_EXPR" > "${METRICS_FILE}.tmp" && mv "${METRICS_FILE}.tmp" "$METRICS_FILE"
 fi
