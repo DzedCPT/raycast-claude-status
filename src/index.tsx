@@ -277,7 +277,6 @@ export default function Command() {
                   },
                 },
                 { text: `${contextPct}%`, tooltip: "Context usage" },
-                { text: instance.status ?? "unknown" },
                 { icon: modeIcon(instance.permission_mode) },
                 {
                   text: timeAgo(instance.updated_at),
