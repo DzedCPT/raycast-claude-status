@@ -13,6 +13,12 @@
       "description": "List and manage active Claude Code sessions",
       "mode": "view",
       "icon": "command-icon.png"
+    },
+    {
+      "name": "create-workspace-folder",
+      "title": "Create Workspace Folder",
+      "description": "Pick a git workspace and create a new folder in it",
+      "mode": "view"
     }
   ],
   "dependencies": {
