@@ -15,6 +15,13 @@ import { join } from "path";
 //   - hooks/raycast-status.sh: writes status, permission_mode, auto_name, custom_name
 // Each session gets its own JSON file: /tmp/claude-instances/<session_id>.json
 const STATE_DIR = "/tmp/claude-instances";
+const WEZTERM = "/opt/homebrew/bin/wezterm";
+
+const WEZTERM_REQUEST_FILE = "/tmp/wezterm-request.json";
+
+function sendWeztermRequest(ops: Record<string, unknown>[]) {
+  writeFileSync(WEZTERM_REQUEST_FILE, JSON.stringify({ ops }));
+}
 
 interface ClaudeInstance {
   session_id: string;
@@ -105,7 +112,7 @@ function isProcessAlive(pid?: number): boolean {
 function getWeztermPanes(): Map<number, { tab_title: string }> {
   try {
     const json = execSync(
-      `/opt/homebrew/bin/wezterm cli list --format json`,
+      `${WEZTERM} cli list --format json`,
     ).toString();
     const panes = JSON.parse(json) as { pane_id: number; tab_title: string }[];
     const map = new Map<number, { tab_title: string }>();
@@ -253,14 +260,8 @@ export default function Command() {
                       icon={Icon.Terminal}
                       onAction={() => {
                         closeMainWindow();
-                        // Activate the pane directly via CLI, then look up its
-                        // workspace so we can switch to it via the file handshake
-                        // (wezterm cli has no workspace-switch command).
-                        execSync(
-                          `/opt/homebrew/bin/wezterm cli activate-pane --pane-id ${instance.wezterm_pane}`,
-                        );
                         const listJson = execSync(
-                          `/opt/homebrew/bin/wezterm cli list --format json`,
+                          `${WEZTERM} cli list --format json`,
                         ).toString();
                         const panes = JSON.parse(listJson) as {
                           pane_id: number;
@@ -270,10 +271,13 @@ export default function Command() {
                           (p) => p.pane_id === instance.wezterm_pane,
                         );
                         if (target) {
-                          writeFileSync(
-                            "/tmp/wezterm-focus-request",
-                            `${target.workspace}\t${instance.wezterm_pane}`,
-                          );
+                          sendWeztermRequest([
+                            {
+                              op: "focus_pane",
+                              workspace: target.workspace,
+                              pane_id: instance.wezterm_pane,
+                            },
+                          ]);
                         }
                         execSync(`open -a WezTerm`);
                       }}
