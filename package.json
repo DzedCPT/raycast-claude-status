@@ -25,6 +25,12 @@
       "title": "Switch Worktree",
       "description": "List git worktrees and switch WezTerm workspace to the selected one",
       "mode": "view"
+    },
+    {
+      "name": "switch-workspace",
+      "title": "Switch Workspace",
+      "description": "List open WezTerm workspaces and switch to one",
+      "mode": "view"
     }
   ],
   "dependencies": {

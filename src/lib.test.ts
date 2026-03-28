@@ -9,6 +9,7 @@ import {
   mergeHookAndMetrics,
   deduplicateByPid,
   resolveDisplayName,
+  sortWorkspacesByRecency,
 } from "./lib";
 
 describe("parseGitNumstat", () => {
@@ -248,5 +249,49 @@ describe("resolveDisplayName", () => {
 
   it("returns 'unknown' when nothing is set", () => {
     expect(resolveDisplayName({})).toBe("unknown");
+  });
+});
+
+describe("sortWorkspacesByRecency", () => {
+  it("sorts most recent first", () => {
+    const workspaces = [
+      { name: "old", cwd: "/old", last_touched: 1000 },
+      { name: "new", cwd: "/new", last_touched: 3000 },
+      { name: "mid", cwd: "/mid", last_touched: 2000 },
+    ];
+    const result = sortWorkspacesByRecency(workspaces);
+    expect(result.map((w) => w.name)).toEqual(["new", "mid", "old"]);
+  });
+
+  it("treats null last_touched as oldest", () => {
+    const workspaces = [
+      { name: "no-time", cwd: null, last_touched: null },
+      { name: "has-time", cwd: "/proj", last_touched: 1000 },
+    ];
+    const result = sortWorkspacesByRecency(workspaces);
+    expect(result.map((w) => w.name)).toEqual(["has-time", "no-time"]);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(sortWorkspacesByRecency([])).toEqual([]);
+  });
+
+  it("does not mutate the original array", () => {
+    const workspaces = [
+      { name: "b", cwd: null, last_touched: 1000 },
+      { name: "a", cwd: null, last_touched: 2000 },
+    ];
+    const original = [...workspaces];
+    sortWorkspacesByRecency(workspaces);
+    expect(workspaces).toEqual(original);
+  });
+
+  it("handles all null timestamps", () => {
+    const workspaces = [
+      { name: "a", cwd: null, last_touched: null },
+      { name: "b", cwd: null, last_touched: null },
+    ];
+    const result = sortWorkspacesByRecency(workspaces);
+    expect(result).toHaveLength(2);
   });
 });

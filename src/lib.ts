@@ -109,6 +109,16 @@ export function deduplicateByPid<T extends { pid?: number }>(instances: T[]): T[
   });
 }
 
+export interface Workspace {
+  name: string;
+  cwd: string | null;
+  last_touched: number | null;
+}
+
+export function sortWorkspacesByRecency(workspaces: Workspace[]): Workspace[] {
+  return [...workspaces].sort((a, b) => (b.last_touched ?? 0) - (a.last_touched ?? 0));
+}
+
 export function resolveDisplayName(instance: {
   custom_name?: string;
   wezterm_tab_title?: string;
