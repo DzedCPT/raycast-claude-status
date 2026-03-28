@@ -9,6 +9,12 @@ import {
 import { execSync } from "child_process";
 import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
+import {
+  projectName,
+  timeAgo,
+  mergeHookAndMetrics,
+  deduplicateByPid,
+} from "./lib";
 
 // State files are written by two scripts in ~/.claude/:
 //   - statusline.sh: writes cwd, model, lines, context_percent, pid, updated_at
@@ -150,16 +156,8 @@ function loadInstances(): ClaudeInstance[] {
               "utf-8",
             );
             if (metricsContent.trim()) {
-              const metrics = JSON.parse(
-                metricsContent,
-              ) as Partial<ClaudeInstance>;
-              Object.assign(hook, metrics, {
-                // Hook-owned fields always win
-                status: hook.status,
-                permission_mode: hook.permission_mode,
-                auto_name: hook.auto_name,
-                custom_name: hook.custom_name,
-              });
+              const metrics = JSON.parse(metricsContent) as Partial<ClaudeInstance>;
+              Object.assign(hook, mergeHookAndMetrics(hook, metrics));
             }
           } catch {
             /* no metrics yet */
@@ -185,13 +183,7 @@ function loadInstances(): ClaudeInstance[] {
     // Deduplicate by PID — keep only the most recent session per process.
     // This handles the case where a new session reuses the same Claude process
     // (same PID + pane) but the old state file was never cleaned up.
-    const seenPids = new Set<number>();
-    const deduped = instances.filter((instance) => {
-      if (!instance.pid) return true;
-      if (seenPids.has(instance.pid)) return false;
-      seenPids.add(instance.pid);
-      return true;
-    });
+    const deduped = deduplicateByPid(instances);
 
     // Enrich WezTerm instances with tab titles
     const hasWezterm = deduped.some(
@@ -215,20 +207,6 @@ function loadInstances(): ClaudeInstance[] {
   }
 }
 
-function projectName(cwd?: string): string {
-  if (!cwd) return "unknown";
-  return cwd.split("/").pop() || cwd;
-}
-
-function timeAgo(dateStr?: string): string {
-  if (!dateStr) return "";
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
-}
 
 export default function Command() {
   const instances = loadInstances();

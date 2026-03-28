@@ -8,23 +8,12 @@ import { execSync } from "child_process";
 const WORKTREES_DIR = join(homedir(), "Developer", "worktrees");
 const WEZTERM_REQUEST_FILE = "/tmp/wezterm-request.json";
 
-interface GitStats {
-  added: number;
-  removed: number;
-}
+import { parseGitNumstat, GitStats } from "./lib";
 
 function getGitStats(dir: string): GitStats | null {
   try {
     const output = execSync("git diff --numstat HEAD 2>/dev/null", { cwd: dir }).toString();
-    let added = 0;
-    let removed = 0;
-    for (const line of output.trim().split("\n")) {
-      if (!line) continue;
-      const [a, r] = line.split("\t");
-      if (a !== "-") added += parseInt(a, 10);
-      if (r !== "-") removed += parseInt(r, 10);
-    }
-    return { added, removed };
+    return parseGitNumstat(output);
   } catch {
     return null;
   }
