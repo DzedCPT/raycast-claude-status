@@ -19,6 +19,12 @@
       "title": "Create Workspace Folder",
       "description": "Pick a git workspace and create a new folder in it",
       "mode": "view"
+    },
+    {
+      "name": "switch-worktree",
+      "title": "Switch Worktree",
+      "description": "List git worktrees and switch WezTerm workspace to the selected one",
+      "mode": "view"
     }
   ],
   "dependencies": {

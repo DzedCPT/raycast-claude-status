@@ -17,6 +17,8 @@ declare namespace Preferences {
   export type Index = ExtensionPreferences & {}
   /** Preferences accessible in the `create-workspace-folder` command */
   export type CreateWorkspaceFolder = ExtensionPreferences & {}
+  /** Preferences accessible in the `switch-worktree` command */
+  export type SwitchWorktree = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -24,5 +26,7 @@ declare namespace Arguments {
   export type Index = {}
   /** Arguments passed to the `create-workspace-folder` command */
   export type CreateWorkspaceFolder = {}
+  /** Arguments passed to the `switch-worktree` command */
+  export type SwitchWorktree = {}
 }
 
