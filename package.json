@@ -9,26 +9,26 @@
   "commands": [
     {
       "name": "index",
-      "title": "Agent Status",
+      "title": "Wez Switch Agent",
       "description": "List and manage active Claude Code sessions",
       "mode": "view",
       "icon": "command-icon.png"
     },
     {
       "name": "create-workspace-folder",
-      "title": "Create Workspace Folder",
+      "title": "Wez Create Worktree",
       "description": "Pick a git workspace and create a new folder in it",
       "mode": "view"
     },
     {
       "name": "switch-worktree",
-      "title": "Switch Worktree",
+      "title": "Wez Open Worktree",
       "description": "List git worktrees and switch WezTerm workspace to the selected one",
       "mode": "view"
     },
     {
       "name": "switch-workspace",
-      "title": "Switch Workspace",
+      "title": "Wez Switch Workspace",
       "description": "List open WezTerm workspaces and switch to one",
       "mode": "view"
     }
